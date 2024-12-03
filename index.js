@@ -121,14 +121,35 @@ function generateBMFont (fontPath, opt, callback) {
     pot: pot,
     square: square,
     allowRotation: allowRotation,
-    tag: false,
+    tag: true,
     border: border
   });
   const chars = [];
 
-  charset = charset.filter((e, i, self) => {
-    return (i == self.indexOf(e)) && (!controlChars.includes(e));
-  }); // Remove duplicate & control chars
+  charset = charset.reduce((acc, curr) => {
+    
+    if(controlChars.includes(curr.char)) return acc;
+
+    const existingIndex = acc.findIndex(item => item.char === curr.char);
+
+    // If the current item has a "tag" property:
+    if (curr.tag) {
+        // If there's no existing item or the existing item doesn't have a "tag":
+        if (existingIndex === -1 || !acc[existingIndex].tag) {
+            acc.push(curr);
+        } else {
+            // If the existing item has a "tag", replace it with the current one
+            acc[existingIndex] = curr;
+        }
+    } else {
+        // If the current item doesn't have a "tag", only add it if there's no existing item
+        if (existingIndex === -1) {
+            acc.push(curr);
+        }
+    }
+
+    return acc;
+  }, []);
 
   const os2 = font.tables.os2;
   const baseline = os2.sTypoAscender * (fontSize / font.unitsPerEm) + (distanceRange >> 1);
@@ -234,11 +255,11 @@ function generateBMFont (fontPath, opt, callback) {
     const kernings = [];
     charset.forEach(first => {
       charset.forEach(second => {
-        const amount = font.getKerningValue(font.charToGlyph(first), font.charToGlyph(second));
+        const amount = font.getKerningValue(font.charToGlyph(first.char), font.charToGlyph(second.char));
         if (amount !== 0) {
           kernings.push({
-            first: first.charCodeAt(0),
-            second: second.charCodeAt(0),
+            first: first.char.charCodeAt(0),
+            second: second.char.charCodeAt(0),
             amount: amount * (fontSize / font.unitsPerEm)
           });
         }
@@ -253,7 +274,7 @@ function generateBMFont (fontPath, opt, callback) {
         size: fontSize,
         bold: 0,
         italic: 0,
-        charset,
+        charset: charset.map(char => char.char).join(""),
         unicode: 1,
         stretchH: 100,
         smooth: 1,
@@ -299,7 +320,7 @@ function generateBMFont (fontPath, opt, callback) {
 
 function generateImage (opt, callback) {
   const {binaryPath, font, char, fontSize, fieldType, distanceRange, roundDecimal, debug, tolerance} = opt;
-  const glyph = font.charToGlyph(char);
+  const glyph = font.charToGlyph(char.char);
   const commands = glyph.getPath(0, 0, fontSize).commands;
   let contours = [];
   let currentContour = [];
@@ -364,7 +385,7 @@ function generateImage (opt, callback) {
     if (isNaN(channelCount) || !rawImageData.some(x => x !== 0)) { // if character is blank
       readline.clearLine(process.stdout);
       readline.cursorTo(process.stdout, 0);
-      console.log(`Warning: no bitmap for character '${char}' (${char.charCodeAt(0)}), adding to font as empty`);
+      console.log(`Warning: no bitmap for character '${char.char}' (${char.char.charCodeAt(0)}), adding to font as empty`);
       width = 0;
       height = 0;
     } else {
@@ -375,16 +396,18 @@ function generateImage (opt, callback) {
       data: {
         imageData,
         fontData: {
-          id: char.charCodeAt(0),
+          id: char.char.charCodeAt(0),
           index: glyph.index,
-          char: String(char),
+          char: String(char.char),
           width: width,
           height: height,
           xoffset: Math.round(bBox.x1) - pad,
           yoffset: Math.round(bBox.y1) + pad + baseline,
           xadvance: glyph.advanceWidth * scale,
-          chnl: 15
-        }
+          chnl: 15,
+          required: char.tag === "required"
+        },
+        tag: char.tag ?? undefined
       },
       width: width,
       height: height
